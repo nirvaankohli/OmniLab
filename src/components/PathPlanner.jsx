@@ -116,14 +116,44 @@ const FieldModel = ({ field, onClick, onPointerMove, onPointerUp }) => {
 };
 
 
-const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete, dimensions, rotations }) => {
-
+const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete, dimensions, rotations, startPose }) => {
     const [currentPos, setCurrentPos] = useState(points[0] || [0,0,0]);
     const [currentRot, setCurrentRot] = useState([-Math.PI / 2, 0, 0]);
     const progress = useRef(0);
     const { camera } = useThree();
     const initialCamPos = useRef(null);
     const initialCamZoom = useRef(null);
+
+    const updateState = (progVal) => {
+        if (points.length < 2) return;
+        
+        const p = Math.max(0, Math.min(1, progVal));
+        const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(p.x, p.y, p.z)));
+        const point = curve.getPoint(p);
+        setCurrentPos(point);
+        
+        let baseAngle;
+        // Use Start Pose Theta explicitly at the very beginning (p=0)
+        if (p === 0 && startPose) {
+            baseAngle = toRadians(startPose.theta);
+        } else {
+            const tangent = curve.getTangent(p);
+            baseAngle = Math.atan2(tangent.y, tangent.x);
+        }
+        
+        const x = toRadians(rotations.x);
+        const y = toRadians(rotations.y);
+        const z = baseAngle + toRadians(rotations.z);
+        
+        setCurrentRot([x, y, z]);
+
+        if (isPlaying) {
+            camera.position.set(point.x, point.y, 50);
+            camera.lookAt(point.x, point.y, 0); 
+            camera.zoom = 5; 
+            camera.updateProjectionMatrix();
+        }
+    };
 
     useEffect(() => {
         if (isPlaying && !initialCamPos.current) {
@@ -139,33 +169,24 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
         }
     }, [isPlaying, camera]);
 
-    useFrame((state, delta) => {
-        if (!isPlaying || points.length < 2) return;
-
-        progress.current += (delta * 0.1); 
-        if (progress.current >= 1) {
-            progress.current = 0;
-            onAnimationComplete();
-            return;
+    // Live update when paused or parameters change
+    useEffect(() => {
+        if (!isPlaying) {
+            updateState(progress.current);
         }
+    }, [rotations, startPose, points, isPlaying]);
 
-        const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(p.x, p.y, p.z)));
-        const point = curve.getPoint(progress.current);
-        const tangent = curve.getTangent(progress.current);
-        
-        setCurrentPos(point);
-        const angle = Math.atan2(tangent.y, tangent.x);
-
-        const x = toRadians(rotations.x);
-        const y = toRadians(rotations.y);
-        const z = angle + toRadians(rotations.z);
-        
-        setCurrentRot([x, y, z]); 
-        
-        camera.position.set(point.x, point.y, 50);
-        camera.lookAt(point.x, point.y, 0); 
-        camera.zoom = 5; 
-        camera.updateProjectionMatrix();
+    useFrame((state, delta) => {
+        if (isPlaying) {
+            progress.current += (delta * 0.1); 
+            if (progress.current >= 1) {
+                progress.current = 0;
+                onAnimationComplete();
+                updateState(0);
+                return;
+            }
+            updateState(progress.current);
+        }
     });
 
     if (!modelUrl) return null;
@@ -185,11 +206,21 @@ const PathPlanner = ({ modelUrl }) => {
 
     const handleStartPoseChange = (newKey, newValue) => {
         const val = parseFloat(newValue) || 0;
-        const oldPose = { ...startPose };
         const newPose = { ...startPose, [newKey]: val };
         setStartPose(newPose);
-        const newWaypoints = waypoints.map(wp => toGlobal(toLocal(wp, oldPose), newPose));
-        setWaypoints(newWaypoints);
+        
+        // Update first waypoint if Start Pose position changes, but don't rotate others
+        if (newKey === 'x' || newKey === 'y') {
+            const newWps = [...waypoints];
+            if (newWps.length > 0) {
+                newWps[0] = new THREE.Vector3(
+                    newKey === 'x' ? val : newWps[0].x,
+                    newKey === 'y' ? val : newWps[0].y,
+                    newWps[0].z
+                );
+                setWaypoints(newWps);
+            }
+        }
     };
 
     const handlePlaneDown = (e) => {
@@ -267,6 +298,7 @@ const PathPlanner = ({ modelUrl }) => {
                             onAnimationComplete={() => setIsPlaying(false)}
                             dimensions={robotDims}
                             rotations={rotations}
+                            startPose={startPose}
                         />
                     )}
 
