@@ -1,0 +1,89 @@
+@font-face {
+  font-family: "Sans";
+  src: url("/fonts/sans.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+@font-face {
+  font-family: "Serif";
+  src: url("/fonts/serif.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+:root {
+  /* Core Colors - Claude / Editorial Aesthetic */
+  /* Warm, organic dark background */
+  --background: #191817; /* Very deep warm charcoal/brown, almost black */
+  --sidebar-bg: #1f1e1d;
+  --surface: #262524;
+  --surface-hover: #33312f;
+  
+  /* Accents */
+  --primary: #d97757;    /* Burnt Orange / Terracotta */
+  --primary-hover: #e88c6e;
+  --secondary: #e6b9a6;  /* Soft Peach/Sand */
+  
+  /* Text */
+  --text-main: #f0ebe6;  /* Off-white / Cream */
+  --text-muted: #9ca3af; /* Warm Gray */
+  
+  --border: #383736;
+  --border-subtle: #2a2928;
+
+  /* Typography - Using User Provided Local Fonts */
+  /* "Serif" is defined in @font-face above */
+  --font-serif: "Serif", "Times New Roman", serif;
+  --font-sans: "Sans", "Inter", sans-serif;
+
+  /* Editorial Feel: Default to Serif for that "literary" vibe, or use Sans for UI and Serif for Headers */
+  font-family: var(--font-serif); 
+  line-height: 1.6;
+  font-weight: 400;
+
+  color-scheme: dark;
+  color: var(--text-main);
+  background-color: var(--background);
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: start center;
+  min-width: 320px;
+  min-height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--surface-hover);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  font-weight: normal; /* Editorial style often uses regular weight headers */
+  letter-spacing: -0.02em;
+}
+
+button {
+  font-family: var(--font-sans); /* Buttons often clearer in sans */
+  letter-spacing: 0.02em;
+}
