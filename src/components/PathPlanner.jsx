@@ -132,13 +132,26 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
         const point = curve.getPoint(p);
         setCurrentPos(point);
         
-        let baseAngle;
-        // Use Start Pose Theta explicitly at the very beginning (p=0)
-        if (p === 0 && startPose) {
-            baseAngle = toRadians(startPose.theta);
-        } else {
-            const tangent = curve.getTangent(p);
-            baseAngle = Math.atan2(tangent.y, tangent.x);
+        const tangent = curve.getTangent(p);
+        const tangentAngle = Math.atan2(tangent.y, tangent.x);
+        
+        let baseAngle = tangentAngle;
+
+        // Smoothly blend from Start Pose Theta to Tangent Angle over the first 15% of path
+        if (startPose) {
+             const startRad = toRadians(startPose.theta);
+             const blendDuration = 0.15;
+             
+             if (p < blendDuration) {
+                 const t = p / blendDuration;
+                 // Easing (SmoothStep)
+                 const ease = t * t * (3 - 2 * t);
+                 
+                 // Shortest angle interpolation
+                 let diff = tangentAngle - startRad;
+                 diff = Math.atan2(Math.sin(diff), Math.cos(diff)); // Normalize to -PI to +PI
+                 baseAngle = startRad + diff * ease;
+             }
         }
         
         const x = toRadians(rotations.x);
