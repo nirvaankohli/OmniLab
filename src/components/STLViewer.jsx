@@ -3,11 +3,32 @@ import { Canvas, useLoader } from '@react-three/fiber';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { OrbitControls, Center, Grid, GizmoHelper, GizmoViewport } from '@react-three/drei';
 
+import * as THREE from 'three';
+
 const Model = ({ url, onClick }) => {
   const geom = useLoader(STLLoader, url);
+  const meshRef = useRef();
+
+  React.useLayoutEffect(() => {
+    if (meshRef.current) {
+      geom.computeBoundingBox();
+      const bbox = geom.boundingBox;
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      
+      // Auto-scale if dimensions are invalid for the view (too big/small)
+      // Target size about 40 units to fit well in the default camera view
+      if (maxDim > 0 && (maxDim > 100 || maxDim < 5)) {
+          const scale = 40 / maxDim;
+          meshRef.current.scale.set(scale, scale, scale);
+      }
+    }
+  }, [geom]);
   
   return (
     <mesh 
+      ref={meshRef}
       geometry={geom} 
       rotation={[-Math.PI / 2, 0, 0]} 
       castShadow 

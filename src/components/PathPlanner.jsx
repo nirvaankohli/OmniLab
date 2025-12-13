@@ -1,15 +1,59 @@
-import React, { useState, useRef, Suspense } from 'react';
-import { Canvas, useLoader, useFrame } from '@react-three/fiber';
+import React, { useState, useRef, Suspense, useEffect } from 'react';
+import { Canvas, useLoader, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Line, Html } from '@react-three/drei';
 import { TextureLoader } from 'three/src/loaders/TextureLoader';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import * as THREE from 'three';
 
-const Waypoint = ({ position }) => {
+// --- Helper Functions ---
+const toRadians = (deg) => deg * (Math.PI / 180);
+const toDegrees = (rad) => rad * (180 / Math.PI);
+
+const toGlobal = (localPoint, startPose) => {
+    const thetaRad = toRadians(startPose.theta);
+    const cos = Math.cos(thetaRad);
+    const sin = Math.sin(thetaRad);
+    return new THREE.Vector3(
+        startPose.x + (localPoint.x * cos - localPoint.y * sin),
+        startPose.y + (localPoint.x * sin + localPoint.y * cos),
+        0
+    );
+};
+
+const toLocal = (globalPoint, startPose) => {
+    const thetaRad = toRadians(startPose.theta);
+    const cos = Math.cos(thetaRad);
+    const sin = Math.sin(thetaRad);
+    const dx = globalPoint.x - startPose.x;
+    const dy = globalPoint.y - startPose.y;
+    return {
+        x: dx * cos + dy * sin,
+        y: -dx * sin + dy * cos
+    };
+};
+
+// --- Components ---
+
+const Waypoint = ({ position, index, onDragStart, onDragEnd, isDragging }) => {
+    const color = isDragging ? "#e88c6e" : "#d97757";
+    const scale = isDragging ? 1.2 : 1;
+
     return (
-        <mesh position={position}>
+        <mesh 
+            position={position} 
+            onPointerDown={(e) => {
+                e.stopPropagation();
+                onDragStart(index);
+            }}
+            onPointerUp={(e) => {
+                e.stopPropagation();
+                onDragEnd();
+            }}
+            scale={[scale, scale, scale]}
+            renderOrder={1} 
+        >
             <sphereGeometry args={[2, 16, 16]} />
-            <meshStandardMaterial color="#d97757" />
+            <meshStandardMaterial color={color} />
         </mesh>
     );
 };
@@ -25,14 +69,30 @@ const Path = ({ points }) => {
     );
 };
 
-const RobotModel = ({ url, position, rotation }) => {
+const RobotModel = ({ url, position, rotation, dimensions }) => {
     const geom = useLoader(STLLoader, url);
+    const meshRef = useRef();
+    
+    useEffect(() => {
+        if(meshRef.current) {
+            meshRef.current.geometry.computeBoundingBox();
+            const bbox = meshRef.current.geometry.boundingBox;
+            const size = new THREE.Vector3();
+            bbox.getSize(size);
+            const scaleX = dimensions.x / (size.x || 1);
+            const scaleY = dimensions.y / (size.y || 1);
+            const scaleZ = dimensions.z / (size.z || 1);
+            meshRef.current.scale.set(scaleX, scaleY, scaleZ);
+            meshRef.current.geometry.center();
+        }
+    }, [geom, dimensions]);
+
     return (
         <mesh 
+            ref={meshRef}
             geometry={geom} 
             position={position} 
             rotation={rotation}
-            scale={[0.5, 0.5, 0.5]} 
             castShadow
         >
             <meshStandardMaterial color="#d97757" />
@@ -40,26 +100,49 @@ const RobotModel = ({ url, position, rotation }) => {
     );
 };
 
-// Extracted to separate component to allow Suspense to work on just this part
-const FieldModel = ({ field, onClick }) => {
+const FieldModel = ({ field, onClick, onPointerMove, onPointerUp }) => {
     const texture = useLoader(TextureLoader, `/fields/${field}`);
     return (
-        <mesh position={[0, 0, -1]} onClick={onClick}>
+        <mesh 
+            position={[0, 0, -1]} 
+            onPointerDown={onClick} 
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp} 
+        >
             <planeGeometry args={[144, 144]} /> 
             <meshBasicMaterial map={texture} />
         </mesh>
     );
 };
 
-const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete }) => {
+
+const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete, dimensions, rotations }) => {
+
     const [currentPos, setCurrentPos] = useState(points[0] || [0,0,0]);
     const [currentRot, setCurrentRot] = useState([-Math.PI / 2, 0, 0]);
     const progress = useRef(0);
+    const { camera } = useThree();
+    const initialCamPos = useRef(null);
+    const initialCamZoom = useRef(null);
+
+    useEffect(() => {
+        if (isPlaying && !initialCamPos.current) {
+            initialCamPos.current = camera.position.clone();
+            initialCamZoom.current = camera.zoom;
+        }
+        if (!isPlaying && initialCamPos.current) {
+             camera.position.copy(initialCamPos.current);
+             camera.zoom = initialCamZoom.current;
+             camera.lookAt(0,0,0);
+             camera.updateProjectionMatrix();
+             initialCamPos.current = null;
+        }
+    }, [isPlaying, camera]);
 
     useFrame((state, delta) => {
         if (!isPlaying || points.length < 2) return;
 
-        progress.current += (delta * 0.2); // 5 seconds to complete path
+        progress.current += (delta * 0.1); 
         if (progress.current >= 1) {
             progress.current = 0;
             onAnimationComplete();
@@ -71,38 +154,108 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete 
         const tangent = curve.getTangent(progress.current);
         
         setCurrentPos(point);
-        
         const angle = Math.atan2(tangent.y, tangent.x);
-        setCurrentRot([-Math.PI / 2, 0, angle]); 
+
+        const x = toRadians(rotations.x);
+        const y = toRadians(rotations.y);
+        const z = angle + toRadians(rotations.z);
+        
+        setCurrentRot([x, y, z]); 
+        
+        camera.position.set(point.x, point.y, 50);
+        camera.lookAt(point.x, point.y, 0); 
+        camera.zoom = 5; 
+        camera.updateProjectionMatrix();
     });
 
     if (!modelUrl) return null;
-    return <RobotModel url={modelUrl} position={currentPos} rotation={currentRot} />;
+    return <RobotModel url={modelUrl} position={currentPos} rotation={currentRot} dimensions={dimensions} />;
 };
 
 const PathPlanner = ({ modelUrl }) => {
-    const [waypoints, setWaypoints] = useState([]);
     const [field, setField] = useState('match2026.png'); 
     const [isPlaying, setIsPlaying] = useState(false);
+    const [activeTab, setActiveTab] = useState('setup'); 
+    
+    const [robotDims, setRobotDims] = useState({ x: 18, y: 18, z: 18 });
+    const [rotations, setRotations] = useState({ x: 0, y: 0, z: 90 });
+    const [startPose, setStartPose] = useState({ x: -60, y: -60, theta: 90 });
+    const [waypoints, setWaypoints] = useState([new THREE.Vector3(-60, -60, 0)]);
+    const [dragIndex, setDragIndex] = useState(-1);
 
-    const handlePlaneClick = (e) => {
+    const handleStartPoseChange = (newKey, newValue) => {
+        const val = parseFloat(newValue) || 0;
+        const oldPose = { ...startPose };
+        const newPose = { ...startPose, [newKey]: val };
+        setStartPose(newPose);
+        const newWaypoints = waypoints.map(wp => toGlobal(toLocal(wp, oldPose), newPose));
+        setWaypoints(newWaypoints);
+    };
+
+    const handlePlaneDown = (e) => {
         if(isPlaying) return;
-        setWaypoints([...waypoints, e.point]);
+        e.stopPropagation();
+        if (dragIndex !== -1) return;
+        const clickedPoint = e.point;
+        clickedPoint.z = 0;
+        setWaypoints([...waypoints, clickedPoint]);
+    };
+
+    const handlePlaneMove = (e) => {
+       if (dragIndex !== -1 && !isPlaying) {
+           e.stopPropagation();
+           const point = e.point;
+           point.z = 0;
+           const newWps = [...waypoints];
+           newWps[dragIndex] = point;
+           setWaypoints(newWps);
+       }
+    };
+
+    const handleDragStart = (index) => {
+        if(!isPlaying) setDragIndex(index);
+    };
+    
+    const handleDragEnd = () => {
+        setDragIndex(-1);
+    };
+
+    const handleWaypointEdit = (index, axis, value) => {
+        const val = parseFloat(value) || 0;
+        const currentGlobal = waypoints[index];
+        const currentLocal = toLocal(currentGlobal, startPose);
+        const newLocal = { ...currentLocal, [axis]: val };
+        const newGlobal = toGlobal(newLocal, startPose);
+        const newWps = [...waypoints];
+        newWps[index] = newGlobal;
+        setWaypoints(newWps);
     };
 
     return (
         <div style={{ width: '100%', height: '100%', background: '#191817', position: 'relative' }}>
-             <Canvas orthographic camera={{ zoom: 5, position: [0, 0, 100] }}>
+             <Canvas orthographic camera={{ zoom: 4, position: [0, 0, 100] }}>
                 <Suspense fallback={<Html center><div style={{color: 'white'}}>Loading Field...</div></Html>}>
                     <ambientLight intensity={0.5} />
                     <directionalLight position={[10, 10, 10]} intensity={1} />
                     
-                    <FieldModel field={field} onClick={handlePlaneClick} />
+                    <FieldModel 
+                        field={field} 
+                        onClick={handlePlaneDown} 
+                        onPointerMove={handlePlaneMove}
+                        onPointerUp={handleDragEnd}
+                    />
                     
                     <Grid position={[0, 0, 0]} args={[144, 144]} cellColor="white" sectionColor="white" sectionSize={24} cellSize={12} fadeDistance={200} infiniteGrid />
 
                     {waypoints.map((p, i) => (
-                        <Waypoint key={i} position={p} />
+                        <Waypoint 
+                            key={i} 
+                            index={i}
+                            position={p} 
+                            onDragStart={handleDragStart}
+                            onDragEnd={handleDragEnd}
+                            isDragging={dragIndex === i}
+                        />
                     ))}
                     <Path points={waypoints} />
                     
@@ -111,114 +264,190 @@ const PathPlanner = ({ modelUrl }) => {
                             points={waypoints} 
                             modelUrl={modelUrl} 
                             isPlaying={isPlaying} 
-                            onAnimationComplete={() => setIsPlaying(false)} 
+                            onAnimationComplete={() => setIsPlaying(false)}
+                            dimensions={robotDims}
+                            rotations={rotations}
                         />
                     )}
 
-                    <OrbitControls enableRotate={false} />
+                    <OrbitControls enableRotate={false} enabled={!isPlaying && dragIndex === -1} />
                 </Suspense>
              </Canvas>
              
+             {/* Left Panel */}
              <div style={{ 
                  position: 'absolute', 
                  top: 24, 
                  left: 24, 
-                 background: 'rgba(38, 37, 36, 0.8)', 
+                 background: 'rgba(38, 37, 36, 0.95)', 
                  backdropFilter: 'blur(8px)',
-                 padding: '1.5rem', 
+                 padding: '1.25rem', 
                  borderRadius: '12px',
-                 minWidth: '240px'
+                 minWidth: '300px',
+                 height: 'auto',
+                 maxHeight: 'calc(100vh - 48px)',
+                 display: 'flex',
+                 flexDirection: 'column',
+                 overflow: 'hidden'
              }}>
-                 <h3 style={{ 
-                     margin: '0 0 1rem 0', 
-                     fontFamily: 'var(--font-serif)', 
-                     fontSize: '1.25rem', 
-                     color: 'var(--text-main)',
-                     fontWeight: 'normal'
-                 }}>
-                     Path Planner
-                 </h3>
-                 
-                 <div style={{ marginBottom: '1.5rem' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem', fontFamily: 'var(--font-sans)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Select Field
-                    </label>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        <button 
-                            onClick={() => setField('match2026.png')}
+                 <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', marginBottom: '1rem', flexShrink: 0 }}>
+                     {['Setup', 'Path'].map(tab => (
+                         <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab.toLowerCase())}
                             style={{
                                 flex: 1,
-                                padding: '0.5rem',
-                                background: field === 'match2026.png' ? 'var(--primary)' : 'transparent',
-                                border: field === 'match2026.png' ? '1px solid var(--primary)' : '1px solid var(--border)',
-                                color: field === 'match2026.png' ? '#1a1918' : 'var(--text-muted)',
-                                borderRadius: '4px',
+                                padding: '0.75rem',
+                                background: 'transparent',
+                                border: 'none',
+                                borderBottom: activeTab === tab.toLowerCase() ? '2px solid var(--primary)' : '2px solid transparent',
+                                color: activeTab === tab.toLowerCase() ? 'var(--text-main)' : 'var(--text-muted)',
                                 cursor: 'pointer',
-                                fontSize: '0.8rem'
+                                fontFamily: 'var(--font-serif)',
+                                fontSize: '1rem'
                             }}
-                        >
-                            Match
-                        </button>
-                        <button 
-                            onClick={() => setField('skills2026.png')}
-                            style={{
-                                flex: 1,
-                                padding: '0.5rem',
-                                background: field === 'skills2026.png' ? 'var(--primary)' : 'transparent',
-                                border: field === 'skills2026.png' ? '1px solid var(--primary)' : '1px solid var(--border)',
-                                color: field === 'skills2026.png' ? '#1a1918' : 'var(--text-muted)',
-                                borderRadius: '4px',
-                                cursor: 'pointer',
-                                fontSize: '0.8rem'
-                            }}
-                        >
-                            Skills
-                        </button>
-                    </div>
+                         >
+                             {tab}
+                         </button>
+                     ))}
                  </div>
 
-                 <div style={{ display: 'flex', gap: '0.5rem' }}>
+                 {/* Scrollable Content Area */}
+                 <div style={{ flex: 1, overflowY: 'auto', marginBottom: '1rem', paddingRight: '4px' }}>
+                    {activeTab === 'setup' && (
+                        <>
+                           <div style={{ marginBottom: '1.5rem' }}>
+                               <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--primary)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                   Field & Robot
+                               </span>
+                               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                                   <button onClick={() => setField('match2026.png')} style={{ flex: 1, padding: '0.5rem', background: field.includes('match') ? 'var(--surface-hover)' : 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', borderRadius: '4px', cursor: 'pointer' }}>Match</button>
+                                   <button onClick={() => setField('skills2026.png')} style={{ flex: 1, padding: '0.5rem', background: field.includes('skills') ? 'var(--surface-hover)' : 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', borderRadius: '4px', cursor: 'pointer' }}>Skills</button>
+                               </div>
+                               
+                               <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Robot Dims (in)</label>
+                               <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                   {['x', 'y', 'z'].map(axis => (
+                                       <input 
+                                           key={axis}
+                                           type="number" 
+                                           value={robotDims[axis]} 
+                                           onChange={(e) => setRobotDims({...robotDims, [axis]: parseFloat(e.target.value)})}
+                                           style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px' }}
+                                       />
+                                   ))}
+                               </div>
+                               
+                               <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '1rem', display: 'block' }}>Rotation Offsets (deg)</label>
+                               <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                   {['x', 'y', 'z'].map(axis => (
+                                       <input 
+                                           key={axis}
+                                           type="number" 
+                                           value={rotations[axis]} 
+                                           onChange={(e) => setRotations({...rotations, [axis]: parseFloat(e.target.value)})}
+                                           style={{ flex: 1, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px' }}
+                                       />
+                                   ))}
+                               </div>
+                           </div>
+
+                           <div style={{ marginBottom: '1rem' }}>
+                               <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--primary)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                   Start Pose
+                               </span>
+                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                                   <div>
+                                       <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>X (in)</label>
+                                       <input type="number" value={startPose.x} onChange={(e) => handleStartPoseChange('x', e.target.value)} style={{ width: '100%', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px' }} />
+                                   </div>
+                                   <div>
+                                       <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Y (in)</label>
+                                       <input type="number" value={startPose.y} onChange={(e) => handleStartPoseChange('y', e.target.value)} style={{ width: '100%', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px' }} />
+                                   </div>
+                                   <div>
+                                       <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Deg</label>
+                                       <input type="number" value={startPose.theta} onChange={(e) => handleStartPoseChange('theta', e.target.value)} style={{ width: '100%', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px' }} />
+                                   </div>
+                               </div>
+                            </div>
+                        </>
+                    )}
+
+                    {activeTab === 'path' && (
+                        <div style={{ marginBottom: '1.5rem' }}>
+                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                               <span style={{ fontSize: '0.75rem', color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                   Waypoints (Relative)
+                               </span>
+                               <button onClick={() => setWaypoints([waypoints[0]])} style={{ fontSize: '0.7rem', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear All</button>
+                           </div>
+                           
+                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                               {waypoints.map((wp, i) => {
+                                   const local = toLocal(wp, startPose);
+                                   return (
+                                       <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.8rem', padding: '0.5rem', background: 'var(--surface)', borderRadius: '6px' }}>
+                                           <div style={{ width: '20px', height: '20px', background: 'var(--primary)', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem' }}>{i}</div>
+                                           <div style={{ flex: 1 }}>
+                                               <div style={{ display: 'flex', gap: '4px', marginBottom: '4px' }}>
+                                                   <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>X:</span>
+                                                   <input 
+                                                       type="number" 
+                                                       value={Math.round(local.x * 10) / 10} 
+                                                       onChange={(e) => handleWaypointEdit(i, 'x', e.target.value)}
+                                                       style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-main)', fontSize: '0.8rem', padding: '0 4px' }}
+                                                   />
+                                               </div>
+                                               <div style={{ display: 'flex', gap: '4px' }}>
+                                                   <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Y:</span>
+                                                   <input 
+                                                       type="number" 
+                                                       value={Math.round(local.y * 10) / 10} 
+                                                       onChange={(e) => handleWaypointEdit(i, 'y', e.target.value)}
+                                                       style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-main)', fontSize: '0.8rem', padding: '0 4px' }}
+                                                   />
+                                               </div>
+                                           </div>
+                                           {i > 0 && (
+                                               <button onClick={() => setWaypoints(waypoints.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#e6b9a6', cursor: 'pointer', fontSize: '1.2rem' }}>×</button>
+                                           )}
+                                       </div>
+                                   );
+                               })}
+                           </div>
+                        </div>
+                    )}
+                 </div>
+                
+                 {/* Action Bar (Sticky Bottom) */}
+                 <div style={{ paddingTop: '1rem', borderTop: '1px solid var(--border-subtle)', flexShrink: 0 }}>
                      <button 
                         onClick={() => setIsPlaying(!isPlaying)}
                         disabled={waypoints.length < 2 || !modelUrl}
                         style={{
-                            flex: 1,
+                            width: '100%',
                             padding: '0.75rem',
-                            background: isPlaying ? 'transparent' : 'var(--text-main)', 
+                            background: isPlaying ? 'transparent' : 'var(--primary)', // Use Primary Color for Action
                             border: isPlaying ? '1px solid var(--text-main)' : 'none',
-                            color: isPlaying ? 'var(--text-main)' : '#000',
+                            color: isPlaying ? 'var(--text-main)' : '#000', // Black text on Primary (Orange)
                             borderRadius: '24px',
                             cursor: 'pointer',
                             fontSize: '0.9rem',
-                            opacity: (waypoints.length < 2 || !modelUrl) ? 0.5 : 1,
                             fontFamily: 'var(--font-sans)',
-                            fontWeight: 500
+                            fontWeight: 600,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '0.5rem',
+                            opacity: (waypoints.length < 2 || !modelUrl) ? 0.5 : 1,
+                            transition: 'all 0.2s'
                         }}
                      >
-                        {isPlaying ? 'Pause' : 'Play Path'}
+                        {isPlaying ? 'Pause Animation' : 'Play Path'}
                      </button>
-                     <button 
-                        onClick={() => setWaypoints([])}
-                        style={{
-                            padding: '0.75rem',
-                            background: 'transparent',
-                            border: '1px solid var(--border)',
-                            color: 'var(--text-muted)',
-                            borderRadius: '24px',
-                            cursor: 'pointer',
-                            fontSize: '0.9rem',
-                            fontFamily: 'var(--font-sans)'
-                        }}
-                     >
-                        Clear
-                     </button>
+                     {!modelUrl && <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#e6b9a6', marginTop: '0.5rem', fontStyle: 'italic' }}>* Upload robot to model path</p>}
                  </div>
-                 
-                 {!modelUrl && (
-                     <p style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#e6b9a6', fontFamily: 'var(--font-sans)', fontStyle: 'italic' }}>
-                         * Upload a robot STL to enable animation
-                     </p>
-                 )}
              </div>
         </div>
     );
