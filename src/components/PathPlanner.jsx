@@ -58,11 +58,37 @@ const Waypoint = ({ position, index, onDragStart, onDragEnd, isDragging }) => {
     );
 };
 
-const Path = ({ points }) => {
-    if (points.length < 2) return null;
+const Path = ({ waypoints }) => {
+    if (waypoints.length < 2) return null;
+    
+    // Build path with smoothing applied to smooth waypoints
+    const pathPoints = [];
+    
+    for (let i = 0; i < waypoints.length; i++) {
+        const wp = waypoints[i];
+        const pos = wp.position;
+        
+        if (wp.smooth && i > 0 && i < waypoints.length - 1) {
+            // For smooth points, create a small curve around the corner
+            const prev = waypoints[i - 1].position;
+            const next = waypoints[i + 1].position;
+            
+            // Generate bezier-like curve points
+            const tension = 0.3;
+            const p1 = new THREE.Vector3().lerpVectors(pos, prev, tension);
+            const p2 = new THREE.Vector3().lerpVectors(pos, next, tension);
+            
+            const curve = new THREE.QuadraticBezierCurve3(p1, pos, p2);
+            const curvePoints = curve.getPoints(8);
+            pathPoints.push(...curvePoints);
+        } else {
+            pathPoints.push(new THREE.Vector3(pos.x, pos.y, pos.z));
+        }
+    }
+    
     return (
         <Line 
-            points={points} 
+            points={pathPoints} 
             color="#e6b9a6" 
             lineWidth={3} 
         />
@@ -214,8 +240,9 @@ const PathPlanner = ({ modelUrl }) => {
     const [robotDims, setRobotDims] = useState({ x: 18, y: 18, z: 18 });
     const [rotations, setRotations] = useState({ x: 0, y: 0, z: 90 });
     const [startPose, setStartPose] = useState({ x: -60, y: -60, theta: 90 });
-    const [waypoints, setWaypoints] = useState([new THREE.Vector3(-60, -60, 0)]);
+    const [waypoints, setWaypoints] = useState([{ position: new THREE.Vector3(-60, -60, 0), smooth: false }]);
     const [dragIndex, setDragIndex] = useState(-1);
+    const [showRobot, setShowRobot] = useState(true);
 
     const handleStartPoseChange = (newKey, newValue) => {
         const val = parseFloat(newValue) || 0;
@@ -226,11 +253,14 @@ const PathPlanner = ({ modelUrl }) => {
         if (newKey === 'x' || newKey === 'y') {
             const newWps = [...waypoints];
             if (newWps.length > 0) {
-                newWps[0] = new THREE.Vector3(
-                    newKey === 'x' ? val : newWps[0].x,
-                    newKey === 'y' ? val : newWps[0].y,
-                    newWps[0].z
-                );
+                newWps[0] = {
+                    ...newWps[0],
+                    position: new THREE.Vector3(
+                        newKey === 'x' ? val : newWps[0].position.x,
+                        newKey === 'y' ? val : newWps[0].position.y,
+                        newWps[0].position.z
+                    )
+                };
                 setWaypoints(newWps);
             }
         }
@@ -242,7 +272,7 @@ const PathPlanner = ({ modelUrl }) => {
         if (dragIndex !== -1) return;
         const clickedPoint = e.point;
         clickedPoint.z = 0;
-        setWaypoints([...waypoints, clickedPoint]);
+        setWaypoints([...waypoints, { position: clickedPoint, smooth: false }]);
     };
 
     const handlePlaneMove = (e) => {
@@ -251,7 +281,7 @@ const PathPlanner = ({ modelUrl }) => {
            const point = e.point;
            point.z = 0;
            const newWps = [...waypoints];
-           newWps[dragIndex] = point;
+           newWps[dragIndex] = { ...newWps[dragIndex], position: point };
            setWaypoints(newWps);
        }
     };
@@ -266,14 +296,23 @@ const PathPlanner = ({ modelUrl }) => {
 
     const handleWaypointEdit = (index, axis, value) => {
         const val = parseFloat(value) || 0;
-        const currentGlobal = waypoints[index];
+        const currentGlobal = waypoints[index].position;
         const currentLocal = toLocal(currentGlobal, startPose);
         const newLocal = { ...currentLocal, [axis]: val };
         const newGlobal = toGlobal(newLocal, startPose);
         const newWps = [...waypoints];
-        newWps[index] = newGlobal;
+        newWps[index] = { ...newWps[index], position: newGlobal };
         setWaypoints(newWps);
     };
+
+    const toggleWaypointSmooth = (index) => {
+        const newWps = [...waypoints];
+        newWps[index] = { ...newWps[index], smooth: !newWps[index].smooth };
+        setWaypoints(newWps);
+    };
+
+    // Extract positions for rendering
+    const waypointPositions = waypoints.map(wp => wp.position);
 
     return (
         <div style={{ width: '100%', height: '100%', background: '#191817', position: 'relative' }}>
@@ -291,21 +330,21 @@ const PathPlanner = ({ modelUrl }) => {
                     
                     <Grid position={[0, 0, 0]} args={[144, 144]} cellColor="white" sectionColor="white" sectionSize={24} cellSize={12} fadeDistance={200} infiniteGrid />
 
-                    {waypoints.map((p, i) => (
+                    {waypoints.map((wp, i) => (
                         <Waypoint 
                             key={i} 
                             index={i}
-                            position={p} 
+                            position={wp.position} 
                             onDragStart={handleDragStart}
                             onDragEnd={handleDragEnd}
                             isDragging={dragIndex === i}
                         />
                     ))}
-                    <Path points={waypoints} />
+                    <Path waypoints={waypoints} />
                     
-                    {modelUrl && (
+                    {modelUrl && showRobot && (
                         <AnimationController 
-                            points={waypoints} 
+                            points={waypointPositions} 
                             modelUrl={modelUrl} 
                             isPlaying={isPlaying} 
                             onAnimationComplete={() => setIsPlaying(false)}
@@ -395,6 +434,24 @@ const PathPlanner = ({ modelUrl }) => {
                                        />
                                    ))}
                                </div>
+                               
+                               <div style={{ marginTop: '1rem' }}>
+                                   <button 
+                                       onClick={() => setShowRobot(!showRobot)}
+                                       style={{
+                                           width: '100%',
+                                           padding: '0.5rem',
+                                           background: showRobot ? 'var(--surface-hover)' : 'transparent',
+                                           border: '1px solid var(--border)',
+                                           color: 'var(--text-main)',
+                                           borderRadius: '4px',
+                                           cursor: 'pointer',
+                                           fontSize: '0.8rem'
+                                       }}
+                                   >
+                                       {showRobot ? '👁 Robot Visible' : '👁‍🗨 Robot Hidden'}
+                                   </button>
+                               </div>
                            </div>
 
                            <div style={{ marginBottom: '1rem' }}>
@@ -430,7 +487,7 @@ const PathPlanner = ({ modelUrl }) => {
                            
                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                {waypoints.map((wp, i) => {
-                                   const local = toLocal(wp, startPose);
+                                   const local = toLocal(wp.position, startPose);
                                    return (
                                        <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.8rem', padding: '0.5rem', background: 'var(--surface)', borderRadius: '6px' }}>
                                            <div style={{ width: '20px', height: '20px', background: 'var(--primary)', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem' }}>{i}</div>
@@ -454,6 +511,21 @@ const PathPlanner = ({ modelUrl }) => {
                                                    />
                                                </div>
                                            </div>
+                                           <button 
+                                               onClick={() => toggleWaypointSmooth(i)}
+                                               style={{ 
+                                                   background: wp.smooth ? 'var(--primary)' : 'transparent', 
+                                                   border: '1px solid var(--border)', 
+                                                   color: wp.smooth ? '#000' : 'var(--text-muted)', 
+                                                   padding: '4px 8px', 
+                                                   borderRadius: '4px', 
+                                                   cursor: 'pointer', 
+                                                   fontSize: '0.65rem',
+                                                   textTransform: 'uppercase'
+                                               }}
+                                           >
+                                               {wp.smooth ? 'Smooth' : 'Sharp'}
+                                           </button>
                                            {i > 0 && (
                                                <button onClick={() => setWaypoints(waypoints.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#e6b9a6', cursor: 'pointer', fontSize: '1.2rem' }}>×</button>
                                            )}
