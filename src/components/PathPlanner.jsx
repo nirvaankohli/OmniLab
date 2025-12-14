@@ -32,6 +32,41 @@ const toLocal = (globalPoint, startPose) => {
     };
 };
 
+// --- Path Generation ---
+const createPath = (waypoints) => {
+    if (waypoints.length < 2) return null;
+    const path = new THREE.CurvePath();
+
+    for (let i = 0; i < waypoints.length - 1; i++) {
+        const current = waypoints[i];
+        const next = waypoints[i + 1];
+        const p0 = current.position;
+        const p3 = next.position;
+        const dist = p0.distanceTo(p3);
+        const curvature = 0.3;
+
+        // Tangent Out (from Current)
+        let tangentOut = new THREE.Vector3().subVectors(p3, p0).normalize();
+        if (current.smooth && i > 0) {
+            const prev = waypoints[i - 1].position;
+            tangentOut = new THREE.Vector3().subVectors(p3, prev).normalize();
+        }
+
+        // Tangent In (to Next)
+        let tangentIn = new THREE.Vector3().subVectors(p3, p0).normalize();
+        if (next.smooth && i < waypoints.length - 2) {
+            const nextNext = waypoints[i + 2].position;
+            tangentIn = new THREE.Vector3().subVectors(nextNext, p0).normalize();
+        }
+
+        const p1 = new THREE.Vector3().copy(p0).add(tangentOut.multiplyScalar(dist * curvature));
+        const p2 = new THREE.Vector3().copy(p3).sub(tangentIn.multiplyScalar(dist * curvature));
+
+        path.add(new THREE.CubicBezierCurve3(p0, p1, p2, p3));
+    }
+    return path;
+};
+
 // --- Components ---
 
 const Waypoint = ({ position, index, onDragStart, onDragEnd, isDragging }) => {
@@ -61,30 +96,11 @@ const Waypoint = ({ position, index, onDragStart, onDragEnd, isDragging }) => {
 const Path = ({ waypoints }) => {
     if (waypoints.length < 2) return null;
     
-    // Build path with smoothing applied to smooth waypoints
-    const pathPoints = [];
+    // Generate exact path points for visualization
+    const curvePath = createPath(waypoints);
+    if (!curvePath) return null;
     
-    for (let i = 0; i < waypoints.length; i++) {
-        const wp = waypoints[i];
-        const pos = wp.position;
-        
-        if (wp.smooth && i > 0 && i < waypoints.length - 1) {
-            // For smooth points, create a small curve around the corner
-            const prev = waypoints[i - 1].position;
-            const next = waypoints[i + 1].position;
-            
-            // Generate bezier-like curve points
-            const tension = 0.3;
-            const p1 = new THREE.Vector3().lerpVectors(pos, prev, tension);
-            const p2 = new THREE.Vector3().lerpVectors(pos, next, tension);
-            
-            const curve = new THREE.QuadraticBezierCurve3(p1, pos, p2);
-            const curvePoints = curve.getPoints(8);
-            pathPoints.push(...curvePoints);
-        } else {
-            pathPoints.push(new THREE.Vector3(pos.x, pos.y, pos.z));
-        }
-    }
+    const pathPoints = curvePath.getPoints(200);
     
     return (
         <Line 
@@ -142,8 +158,8 @@ const FieldModel = ({ field, onClick, onPointerMove, onPointerUp }) => {
 };
 
 
-const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete, dimensions, rotations, startPose }) => {
-    const [currentPos, setCurrentPos] = useState(points[0] || [0,0,0]);
+const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete, dimensions, rotations, startPose, speed }) => {
+    const [currentPos, setCurrentPos] = useState(points[0]?.position || [0,0,0]);
     const [currentRot, setCurrentRot] = useState([-Math.PI / 2, 0, 0]);
     const progress = useRef(0);
     const { camera } = useThree();
@@ -153,12 +169,15 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
     const updateState = (progVal) => {
         if (points.length < 2) return;
         
+        const path = createPath(points);
+        if (!path) return;
+
         const p = Math.max(0, Math.min(1, progVal));
-        const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(p.x, p.y, p.z)));
-        const point = curve.getPoint(p);
+        
+        const point = path.getPoint(p);
         setCurrentPos(point);
         
-        const tangent = curve.getTangent(p);
+        const tangent = path.getTangent(p);
         const tangentAngle = Math.atan2(tangent.y, tangent.x);
         
         let baseAngle = tangentAngle;
@@ -217,7 +236,13 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
 
     useFrame((state, delta) => {
         if (isPlaying) {
-            progress.current += (delta * 0.1); 
+            const path = createPath(points);
+            const pathLength = path.getLength(); // Total length in inches
+            // speed is in inches per second
+            // Progress increment based on actual distance
+            const progressIncrement = (speed * delta) / pathLength;
+            
+            progress.current += progressIncrement; 
             if (progress.current >= 1) {
                 progress.current = 0;
                 onAnimationComplete();
@@ -243,6 +268,7 @@ const PathPlanner = ({ modelUrl }) => {
     const [waypoints, setWaypoints] = useState([{ position: new THREE.Vector3(-60, -60, 0), smooth: false }]);
     const [dragIndex, setDragIndex] = useState(-1);
     const [showRobot, setShowRobot] = useState(true);
+    const [speed, setSpeed] = useState(60);
 
     const handleStartPoseChange = (newKey, newValue) => {
         const val = parseFloat(newValue) || 0;
@@ -344,13 +370,14 @@ const PathPlanner = ({ modelUrl }) => {
                     
                     {modelUrl && showRobot && (
                         <AnimationController 
-                            points={waypointPositions} 
+                            points={waypoints} 
                             modelUrl={modelUrl} 
                             isPlaying={isPlaying} 
                             onAnimationComplete={() => setIsPlaying(false)}
                             dimensions={robotDims}
                             rotations={rotations}
                             startPose={startPose}
+                            speed={speed}
                         />
                     )}
 
@@ -471,8 +498,23 @@ const PathPlanner = ({ modelUrl }) => {
                                        <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Deg</label>
                                        <input type="number" value={startPose.theta} onChange={(e) => handleStartPoseChange('theta', e.target.value)} style={{ width: '100%', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px' }} />
                                    </div>
-                               </div>
-                            </div>
+                                </div>
+                             </div>
+
+                             <div style={{ marginBottom: '1rem' }}>
+                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                     <span style={{ fontSize: '0.75rem', color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Speed</span>
+                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-main)' }}>{speed} in/s</span>
+                                 </div>
+                                 <input 
+                                     type="range" 
+                                     min="10" 
+                                     max="120" 
+                                     value={speed} 
+                                     onChange={(e) => setSpeed(parseInt(e.target.value))} 
+                                     style={{ width: '100%', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                                 />
+                             </div>
                         </>
                     )}
 
