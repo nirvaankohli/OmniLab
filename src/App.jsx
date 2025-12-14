@@ -1,11 +1,16 @@
 import { useState } from 'react'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import STLViewer from './components/STLViewer'
 import FileUploader from './components/FileUploader'
 import PathPlanner from './components/PathPlanner'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import MyFilesPage from './pages/MyFilesPage'
 
-function App() {
-  const [view, setView] = useState('config') // 'config' | 'planner'
+function AppContent() {
+  const { loading } = useAuth();
+  const [view, setView] = useState('config') // 'config' | 'planner' | 'files' | 'login' | 'register'
   const [modelUrl, setModelUrl] = useState(null)
   const [fileName, setFileName] = useState(null)
   const [points, setPoints] = useState([])
@@ -15,12 +20,42 @@ function App() {
     setPoints([...points, { position: point, type: activeType }])
   }
 
+  const handleFileSelect = (url, name) => {
+    setModelUrl(url);
+    setFileName(name);
+    setView('config');
+  };
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        backgroundColor: 'var(--background)',
+        color: 'var(--text-muted)',
+        fontFamily: 'var(--font-sans)',
+      }}>
+        Loading...
+      </div>
+    );
+  }
+
+  // Auth pages (shown without layout)
+  if (view === 'login') {
+    return <LoginPage onSwitchToRegister={() => setView('register')} />;
+  }
+
+  if (view === 'register') {
+    return <RegisterPage onSwitchToLogin={() => setView('login')} />;
+  }
+
   const renderConfigControls = () => (
     <div style={{
       position: 'absolute',
       top: '32px',
       left: '32px',
-      // Minimalist panel
       background: 'transparent',
       minWidth: '300px'
     }}>
@@ -52,8 +87,8 @@ function App() {
                     padding: '0.4rem 0.8rem',
                     background: isActive ? 'var(--primary)' : 'transparent',
                     border: isActive ? '1px solid var(--primary)' : '1px solid var(--border)',
-                    color: isActive ? '#1a1918' : 'var(--text-muted)', // Dark text on active primary
-                    borderRadius: '20px', // Pill shape
+                    color: isActive ? '#1a1918' : 'var(--text-muted)',
+                    borderRadius: '20px',
                     cursor: 'pointer',
                     textTransform: 'capitalize',
                     fontSize: '0.85rem',
@@ -172,19 +207,26 @@ function App() {
                 </p>
               </div>
               <div style={{ width: '450px' }}>
-                <FileUploader onFileSelect={(url, name) => {
-                  setModelUrl(url)
-                  setFileName(name)
-                }} />
+                <FileUploader onFileSelect={handleFileSelect} />
               </div>
             </div>
           )
+        ) : view === 'files' ? (
+          <MyFilesPage onFileSelect={handleFileSelect} />
         ) : (
             <PathPlanner modelUrl={modelUrl} />
         )}
       </div>
     </Layout>
   )
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
 }
 
 export default App
