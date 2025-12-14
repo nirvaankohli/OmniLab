@@ -1,17 +1,29 @@
 import React from 'react';
+import { useAuth } from '../context/AuthContext';
 
 const Sidebar = ({ currentView, onViewChange }) => {
+  const { user, logout, isAuthenticated } = useAuth();
+
   const menuItems = [
-    { id: 'config', label: 'Robot Config', icon: '✦' }, // Spark icon preference
+    { id: 'config', label: 'Robot Config', icon: '✦' },
     { id: 'planner', label: 'Path Planner', icon: '〰' },
+    { id: 'files', label: 'My Files', icon: '📁', requiresAuth: true },
   ];
+
+  const visibleItems = menuItems.filter(item => 
+    !item.requiresAuth || isAuthenticated
+  );
+
+  const handleLogout = async () => {
+    await logout();
+    onViewChange('config');
+  };
 
   return (
     <aside style={{
       width: '240px',
       height: '100%',
       backgroundColor: 'var(--sidebar-bg)',
-      // borderRight: '1px solid var(--border)', // Minimalist: maybe remove border or keep it very subtle
       borderRight: 'none',
       display: 'flex',
       flexDirection: 'column',
@@ -29,11 +41,10 @@ const Sidebar = ({ currentView, onViewChange }) => {
         }}>
           Omni Lab
         </h1>
-        {/* Removed subtitle for cleaner look */}
       </div>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-        {menuItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = currentView === item.id;
           return (
             <button
@@ -44,8 +55,8 @@ const Sidebar = ({ currentView, onViewChange }) => {
                 alignItems: 'center',
                 gap: '0.75rem',
                 width: '100%',
-                padding: '0.5rem 0', // Vertical breathing, no horizontal padding
-                backgroundColor: 'transparent', // No background blocks
+                padding: '0.5rem 0',
+                backgroundColor: 'transparent',
                 border: 'none',
                 color: isActive ? 'var(--primary)' : 'var(--text-muted)',
                 cursor: 'pointer',
@@ -71,10 +82,81 @@ const Sidebar = ({ currentView, onViewChange }) => {
       </nav>
 
       <div style={{ marginTop: 'auto' }}>
-         {/* User or status section could go here, kept very minimal */}
-         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'var(--font-sans)' }}>
-           v0.1.0
-         </div>
+        {isAuthenticated && user ? (
+          <div style={{ 
+            borderTop: '1px solid var(--border)',
+            paddingTop: '1rem',
+            marginTop: '1rem'
+          }}>
+            <div style={{ 
+              fontSize: '0.9rem', 
+              color: 'var(--text-main)', 
+              fontFamily: 'var(--font-sans)',
+              marginBottom: '0.25rem'
+            }}>
+              {user.username}
+            </div>
+            <div style={{ 
+              fontSize: '0.8rem', 
+              color: 'var(--text-muted)', 
+              fontFamily: 'var(--font-sans)',
+              marginBottom: '0.75rem'
+            }}>
+              {user.teamName}
+            </div>
+            <button
+              onClick={handleLogout}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                fontFamily: 'var(--font-sans)',
+                padding: 0,
+                textDecoration: 'underline',
+                textUnderlineOffset: '3px',
+                opacity: 0.7,
+                transition: 'opacity 0.2s',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
+            >
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <div style={{ 
+            borderTop: '1px solid var(--border)',
+            paddingTop: '1rem',
+            marginTop: '1rem'
+          }}>
+            <button
+              onClick={() => onViewChange('login')}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--primary)',
+                cursor: 'pointer',
+                fontSize: '0.85rem',
+                fontFamily: 'var(--font-sans)',
+                padding: 0,
+                textDecoration: 'underline',
+                textUnderlineOffset: '3px',
+              }}
+            >
+              Sign in
+            </button>
+          </div>
+        )}
+        <div style={{ 
+          fontSize: '0.8rem', 
+          color: 'var(--text-muted)', 
+          fontFamily: 'var(--font-sans)',
+          marginTop: '1rem'
+        }}>
+          v0.1.0
+        </div>
       </div>
     </aside>
   );

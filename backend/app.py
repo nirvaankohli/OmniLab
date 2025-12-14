@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response, send_from_directory
 from flask_cors import CORS
 from flask_bcrypt import Bcrypt
 from flask_limiter import Limiter
@@ -9,10 +9,11 @@ import datetime
 import os
 import re
 from functools import wraps
-from models import db, User
+from models import db, User, CADFile
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
 
-# Load environment variables
+
 load_dotenv()
 
 app = Flask(__name__)
@@ -21,17 +22,19 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev_key_fallback")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["UPLOAD_FOLDER"] = os.path.join(app.root_path, "uploads")
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+
+
+os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 
 IS_PRODUCTION = os.getenv("FLASK_ENV") == "production"
 COOKIE_SECURE = IS_PRODUCTION
 COOKIE_HTTPONLY = True
-COOKIE_SAMESITE = (
-    "None" if not IS_PRODUCTION else "Strict"
-) 
+COOKIE_SAMESITE = "None" if not IS_PRODUCTION else "Strict"
 
 COOKIE_SAMESITE = "Lax"
-
 
 
 CORS(
@@ -86,8 +89,6 @@ def validate_password(password):
     if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
         return False
     return True
-
-
 
 
 @app.route("/auth/register", methods=["POST"])
@@ -204,6 +205,88 @@ def get_current_user(current_user):
             "created_at": current_user.created_at,
         }
     )
+
+
+# --- File Routes ---
+
+ALLOWED_EXTENSIONS = {"stl", "obj", "glb", "gltf"}
+
+
+def allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+@app.route("/api/upload", methods=["POST"])
+@token_required
+@limiter.limit("10 per minute")
+def upload_file(current_user):
+    if "file" not in request.files:
+        return jsonify({"message": "No file part"}), 400
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"message": "No selected file"}), 400
+
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        # Use user id prefix for simple separation
+        user_upload_dir = os.path.join(
+            app.config["UPLOAD_FOLDER"], str(current_user.id)
+        )
+        os.makedirs(user_upload_dir, exist_ok=True)
+
+        # Timestamp to avoid overwrites
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        safe_filename = f"{timestamp}_{filename}"
+        filepath = os.path.join(user_upload_dir, safe_filename)
+
+        file.save(filepath)
+
+        new_file = CADFile(
+            filename=filename, filepath=filepath, user_id=current_user.id
+        )
+        db.session.add(new_file)
+        db.session.commit()
+
+        return (
+            jsonify(
+                {
+                    "message": "File uploaded successfully",
+                    "id": new_file.id,
+                    "filename": filename,
+                }
+            ),
+            201,
+        )
+
+    return jsonify({"message": "File type not allowed"}), 400
+
+
+@app.route("/api/files", methods=["GET"])
+@token_required
+def list_files(current_user):
+    files = (
+        CADFile.query.filter_by(user_id=current_user.id)
+        .order_by(CADFile.created_at.desc())
+        .all()
+    )
+    output = []
+    for file in files:
+        output.append(
+            {"id": file.id, "filename": file.filename, "uploaded_at": file.created_at}
+        )
+    return jsonify({"files": output})
+
+
+@app.route("/api/files/<int:file_id>", methods=["GET"])
+@token_required
+def get_file(current_user, file_id):
+    file_record = CADFile.query.filter_by(id=file_id, user_id=current_user.id).first()
+    if not file_record:
+        return jsonify({"message": "File not found"}), 404
+
+    directory = os.path.dirname(file_record.filepath)
+    filename = os.path.basename(file_record.filepath)
+    return send_from_directory(directory, filename)
 
 
 if __name__ == "__main__":
