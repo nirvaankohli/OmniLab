@@ -22,9 +22,26 @@ const MyFilesPage = ({ onFileSelect }) => {
     }
   }
 
-  const handleFileClick = (file) => {
-    const url = api.getFileUrl(file.id);
-    onFileSelect(url, file.filename);
+  const [downloading, setDownloading] = useState(null);
+
+  const handleFileClick = async (file) => {
+    try {
+      setDownloading(file.id);
+      // Fetch file with credentials to get a blob URL
+      const response = await fetch(api.getFileUrl(file.id), {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to load file');
+      }
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      onFileSelect(blobUrl, file.filename);
+    } catch (err) {
+      setError(err.message || 'Failed to load file');
+    } finally {
+      setDownloading(null);
+    }
   };
 
   const formatDate = (dateString) => {
@@ -113,32 +130,39 @@ const MyFilesPage = ({ onFileSelect }) => {
           gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
           gap: '1rem',
         }}>
-          {files.map((file) => (
+          {files.map((file) => {
+            const isDownloading = downloading === file.id;
+            return (
             <div
               key={file.id}
-              onClick={() => handleFileClick(file)}
+              onClick={() => !isDownloading && handleFileClick(file)}
               style={{
                 padding: '1.25rem',
                 backgroundColor: 'var(--surface)',
-                border: '1px solid var(--border)',
+                border: `1px solid ${isDownloading ? 'var(--primary)' : 'var(--border)'}`,
                 borderRadius: '8px',
-                cursor: 'pointer',
+                cursor: isDownloading ? 'wait' : 'pointer',
                 transition: 'all 0.2s',
+                opacity: isDownloading ? 0.7 : 1,
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = 'var(--primary)';
-                e.currentTarget.style.transform = 'translateY(-2px)';
+                if (!isDownloading) {
+                  e.currentTarget.style.borderColor = 'var(--primary)';
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = 'var(--border)';
-                e.currentTarget.style.transform = 'translateY(0)';
+                if (!isDownloading) {
+                  e.currentTarget.style.borderColor = 'var(--border)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                }
               }}
             >
               <div style={{
                 fontSize: '1.5rem',
                 marginBottom: '0.75rem',
               }}>
-                🗂️
+                {isDownloading ? '⏳' : '🗂️'}
               </div>
               <div style={{
                 fontFamily: 'var(--font-sans)',
@@ -152,12 +176,13 @@ const MyFilesPage = ({ onFileSelect }) => {
               <div style={{
                 fontFamily: 'var(--font-sans)',
                 fontSize: '0.75rem',
-                color: 'var(--text-muted)',
+                color: isDownloading ? 'var(--primary)' : 'var(--text-muted)',
               }}>
-                {formatDate(file.uploaded_at)}
+                {isDownloading ? 'Loading...' : formatDate(file.uploaded_at)}
               </div>
             </div>
-          ))}
+          );
+          })}
         </div>
       )}
     </div>

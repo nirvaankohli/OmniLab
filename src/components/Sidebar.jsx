@@ -134,16 +134,20 @@ const Sidebar = ({ currentView, onViewChange }) => {
             <button
               onClick={() => onViewChange('login')}
               style={{
-                background: 'none',
+                background: 'var(--primary)',
                 border: 'none',
-                color: 'var(--primary)',
+                color: '#1a1918',
                 cursor: 'pointer',
-                fontSize: '0.85rem',
+                fontSize: '1rem',
                 fontFamily: 'var(--font-sans)',
-                padding: 0,
-                textDecoration: 'underline',
-                textUnderlineOffset: '3px',
+                padding: '0.75rem 1.5rem',
+                borderRadius: '8px',
+                fontWeight: 500,
+                width: '100%',
+                transition: 'opacity 0.2s',
               }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
             >
               Sign in
             </button>

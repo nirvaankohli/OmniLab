@@ -162,11 +162,27 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
     const [currentPos, setCurrentPos] = useState(points[0]?.position || [0,0,0]);
     const [currentRot, setCurrentRot] = useState([-Math.PI / 2, 0, 0]);
     const progress = useRef(0);
+    const currentHeading = useRef(startPose ? toRadians(startPose.theta) : 0);
     const { camera } = useThree();
     const initialCamPos = useRef(null);
     const initialCamZoom = useRef(null);
 
-    const updateState = (progVal) => {
+    // Maximum angular velocity in radians per second (realistic for competition robots)
+    const maxAngularVelocity = toRadians(180); // 180 degrees per second max turn rate
+
+    // Normalize angle to -PI to PI range
+    const normalizeAngle = (angle) => {
+        while (angle > Math.PI) angle -= 2 * Math.PI;
+        while (angle < -Math.PI) angle += 2 * Math.PI;
+        return angle;
+    };
+
+    // Get the shortest angular difference between two angles
+    const angleDifference = (from, to) => {
+        return normalizeAngle(to - from);
+    };
+
+    const updateState = (progVal, delta = 0) => {
         if (points.length < 2) return;
         
         const path = createPath(points);
@@ -177,31 +193,48 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
         const point = path.getPoint(p);
         setCurrentPos(point);
         
-        const tangent = path.getTangent(p);
-        const tangentAngle = Math.atan2(tangent.y, tangent.x);
+        // Look ahead on the path for smoother anticipation of turns
+        const lookAheadAmount = 0.02; // Look 2% ahead on the path
+        const lookAheadP = Math.min(1, p + lookAheadAmount);
+        const lookAheadTangent = path.getTangent(lookAheadP);
+        const targetAngle = Math.atan2(lookAheadTangent.y, lookAheadTangent.x);
         
-        let baseAngle = tangentAngle;
+        let desiredHeading = targetAngle;
 
-        // Smoothly blend from Start Pose Theta to Tangent Angle over the first 15% of path
-        if (startPose) {
-             const startRad = toRadians(startPose.theta);
-             const blendDuration = 0.15;
-             
-             if (p < blendDuration) {
-                 const t = p / blendDuration;
-                 // Easing (SmoothStep)
-                 const ease = t * t * (3 - 2 * t);
-                 
-                 // Shortest angle interpolation
-                 let diff = tangentAngle - startRad;
-                 diff = Math.atan2(Math.sin(diff), Math.cos(diff)); // Normalize to -PI to +PI
-                 baseAngle = startRad + diff * ease;
-             }
+        // For the start of the path, blend from start pose
+        if (startPose && p < 0.05) {
+            const startRad = toRadians(startPose.theta);
+            const t = p / 0.05;
+            const ease = t * t * (3 - 2 * t);
+            const diff = angleDifference(startRad, targetAngle);
+            desiredHeading = startRad + diff * ease;
+        }
+
+        // Apply angular velocity limiting for realistic turning
+        if (delta > 0 && isPlaying) {
+            const maxTurn = maxAngularVelocity * delta;
+            const angleDiff = angleDifference(currentHeading.current, desiredHeading);
+            
+            // Clamp the turn to max angular velocity
+            let actualTurn = angleDiff;
+            if (Math.abs(angleDiff) > maxTurn) {
+                actualTurn = Math.sign(angleDiff) * maxTurn;
+            }
+            
+            // Apply smooth easing to the turn for even more natural movement
+            // Use exponential decay for smooth approach to target
+            const smoothFactor = 1 - Math.exp(-8 * delta);
+            actualTurn = actualTurn * smoothFactor + angleDiff * (1 - smoothFactor) * 0.3;
+            
+            currentHeading.current = normalizeAngle(currentHeading.current + actualTurn);
+        } else {
+            // When paused or initializing, set heading directly
+            currentHeading.current = desiredHeading;
         }
         
         const x = toRadians(rotations.x);
         const y = toRadians(rotations.y);
-        const z = baseAngle + toRadians(rotations.z);
+        const z = currentHeading.current + toRadians(rotations.z);
         
         setCurrentRot([x, y, z]);
 
@@ -213,10 +246,15 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
         }
     };
 
+    // Reset heading when animation starts
     useEffect(() => {
         if (isPlaying && !initialCamPos.current) {
             initialCamPos.current = camera.position.clone();
             initialCamZoom.current = camera.zoom;
+            // Reset heading to start pose when animation begins
+            if (startPose) {
+                currentHeading.current = toRadians(startPose.theta);
+            }
         }
         if (!isPlaying && initialCamPos.current) {
              camera.position.copy(initialCamPos.current);
@@ -225,12 +263,12 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
              camera.updateProjectionMatrix();
              initialCamPos.current = null;
         }
-    }, [isPlaying, camera]);
+    }, [isPlaying, camera, startPose]);
 
     // Live update when paused or parameters change
     useEffect(() => {
         if (!isPlaying) {
-            updateState(progress.current);
+            updateState(progress.current, 0);
         }
     }, [rotations, startPose, points, isPlaying]);
 
@@ -246,10 +284,10 @@ const AnimationController = ({ points, modelUrl, isPlaying, onAnimationComplete,
             if (progress.current >= 1) {
                 progress.current = 0;
                 onAnimationComplete();
-                updateState(0);
+                updateState(0, 0);
                 return;
             }
-            updateState(progress.current);
+            updateState(progress.current, delta);
         }
     });
 

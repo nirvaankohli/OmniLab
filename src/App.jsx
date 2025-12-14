@@ -44,7 +44,7 @@ function AppContent() {
 
   // Auth pages (shown without layout)
   if (view === 'login') {
-    return <LoginPage onSwitchToRegister={() => setView('register')} />;
+    return <LoginPage onSwitchToRegister={() => setView('register')} onLoginSuccess={() => setView('config')} />;
   }
 
   if (view === 'register') {

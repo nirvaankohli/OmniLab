@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 
-const LoginPage = ({ onSwitchToRegister }) => {
+const LoginPage = ({ onSwitchToRegister, onLoginSuccess }) => {
   const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -15,6 +15,9 @@ const LoginPage = ({ onSwitchToRegister }) => {
 
     try {
       await login(username, password);
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      }
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
