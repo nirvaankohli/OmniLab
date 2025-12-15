@@ -20,9 +20,9 @@
   --surface-hover: #33312f;
   
   /* Accents */
-  --primary: #d97757;    /* Burnt Orange / Terracotta */
-  --primary-hover: #e88c6e;
-  --secondary: #e6b9a6;  /* Soft Peach/Sand */
+  --primary: #726ee0;    /* Purple (was Burnt Orange) */
+  --primary-hover: #8a86e8;
+  --secondary: #9d9ae8;  /* Light Purple (was Soft Peach) */
   
   /* Text */
   --text-main: #f0ebe6;  /* Off-white / Cream */

@@ -70,7 +70,7 @@ const createPath = (waypoints) => {
 // --- Components ---
 
 const Waypoint = ({ position, index, onDragStart, onDragEnd, isDragging }) => {
-    const color = isDragging ? "#e88c6e" : "#d97757";
+    const color = isDragging ? "#8a86e8" : "#726ee0";
     const scale = isDragging ? 1.2 : 1;
 
     return (
@@ -105,7 +105,7 @@ const Path = ({ waypoints }) => {
     return (
         <Line 
             points={pathPoints} 
-            color="#e6b9a6" 
+            color="#9d9ae8" 
             lineWidth={3} 
         />
     );
@@ -137,7 +137,7 @@ const RobotModel = ({ url, position, rotation, dimensions }) => {
             rotation={rotation}
             castShadow
         >
-            <meshStandardMaterial color="#d97757" />
+            <meshStandardMaterial color="#726ee0" />
         </mesh>
     );
 };
@@ -307,6 +307,7 @@ const PathPlanner = ({ modelUrl }) => {
     const [dragIndex, setDragIndex] = useState(-1);
     const [showRobot, setShowRobot] = useState(true);
     const [speed, setSpeed] = useState(60);
+    const [useRelativeCoords, setUseRelativeCoords] = useState(true);
 
     const handleStartPoseChange = (newKey, newValue) => {
         const val = parseFloat(newValue) || 0;
@@ -523,7 +524,7 @@ const PathPlanner = ({ modelUrl }) => {
                                <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--primary)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                    Start Pose
                                </span>
-                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
                                    <div>
                                        <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>X (in)</label>
                                        <input type="number" value={startPose.x} onChange={(e) => handleStartPoseChange('x', e.target.value)} style={{ width: '100%', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px' }} />
@@ -537,6 +538,33 @@ const PathPlanner = ({ modelUrl }) => {
                                        <input type="number" value={startPose.theta} onChange={(e) => handleStartPoseChange('theta', e.target.value)} style={{ width: '100%', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-main)', padding: '6px', borderRadius: '4px' }} />
                                    </div>
                                 </div>
+                                <button
+                                    onClick={() => {
+                                        if (waypoints.length >= 2) {
+                                            const start = waypoints[0].position;
+                                            const next = waypoints[1].position;
+                                            const dx = next.x - start.x;
+                                            const dy = next.y - start.y;
+                                            const angleRad = Math.atan2(dy, dx);
+                                            const angleDeg = Math.round(toDegrees(angleRad));
+                                            handleStartPoseChange('theta', angleDeg);
+                                        }
+                                    }}
+                                    disabled={waypoints.length < 2}
+                                    style={{
+                                        width: '100%',
+                                        padding: '0.5rem',
+                                        background: waypoints.length >= 2 ? 'var(--surface-hover)' : 'transparent',
+                                        border: '1px solid var(--border)',
+                                        color: waypoints.length >= 2 ? 'var(--text-main)' : 'var(--text-muted)',
+                                        borderRadius: '4px',
+                                        cursor: waypoints.length >= 2 ? 'pointer' : 'not-allowed',
+                                        fontSize: '0.75rem',
+                                        opacity: waypoints.length >= 2 ? 1 : 0.5
+                                    }}
+                                >
+                                    🎯 Point to Next Waypoint
+                                </button>
                              </div>
 
                              <div style={{ marginBottom: '1rem' }}>
@@ -558,16 +586,79 @@ const PathPlanner = ({ modelUrl }) => {
 
                     {activeTab === 'path' && (
                         <div style={{ marginBottom: '1.5rem' }}>
-                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                                <span style={{ fontSize: '0.75rem', color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                   Waypoints (Relative)
+                                   Waypoints
                                </span>
                                <button onClick={() => setWaypoints([waypoints[0]])} style={{ fontSize: '0.7rem', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Clear All</button>
                            </div>
                            
+                           {/* Coordinate Mode Toggle */}
+                           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                               <button 
+                                   onClick={() => setUseRelativeCoords(true)}
+                                   style={{ 
+                                       flex: 1, 
+                                       padding: '0.5rem', 
+                                       background: useRelativeCoords ? 'var(--surface-hover)' : 'transparent', 
+                                       border: '1px solid var(--border)', 
+                                       color: 'var(--text-main)', 
+                                       borderRadius: '4px', 
+                                       cursor: 'pointer',
+                                       fontSize: '0.75rem'
+                                   }}
+                               >
+                                   Relative
+                               </button>
+                               <button 
+                                   onClick={() => setUseRelativeCoords(false)}
+                                   style={{ 
+                                       flex: 1, 
+                                       padding: '0.5rem', 
+                                       background: !useRelativeCoords ? 'var(--surface-hover)' : 'transparent', 
+                                       border: '1px solid var(--border)', 
+                                       color: 'var(--text-main)', 
+                                       borderRadius: '4px', 
+                                       cursor: 'pointer',
+                                       fontSize: '0.75rem'
+                                   }}
+                               >
+                                   Absolute
+                               </button>
+                           </div>
+                           <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: '1rem', fontStyle: 'italic' }}>
+                               {useRelativeCoords 
+                                   ? 'Start = (0, 0). Other points relative to start.' 
+                                   : 'Field coordinates (inches from center).'}
+                           </p>
+                           
                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                                {waypoints.map((wp, i) => {
-                                   const local = toLocal(wp.position, startPose);
+                                   // Calculate display coordinates based on mode
+                                   let displayX, displayY;
+                                   if (useRelativeCoords) {
+                                       if (i === 0) {
+                                           // First waypoint is always (0, 0) in relative mode
+                                           displayX = 0;
+                                           displayY = 0;
+                                       } else {
+                                           // Calculate relative to first waypoint
+                                           const firstWp = waypoints[0].position;
+                                           const thetaRad = toRadians(startPose.theta);
+                                           const cos = Math.cos(thetaRad);
+                                           const sin = Math.sin(thetaRad);
+                                           const dx = wp.position.x - firstWp.x;
+                                           const dy = wp.position.y - firstWp.y;
+                                           // Transform to local coordinates (relative to start heading)
+                                           displayX = dx * cos + dy * sin;
+                                           displayY = -dx * sin + dy * cos;
+                                       }
+                                   } else {
+                                       // Absolute mode - show field coordinates
+                                       displayX = wp.position.x;
+                                       displayY = wp.position.y;
+                                   }
+                                   
                                    return (
                                        <div key={i} style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontSize: '0.8rem', padding: '0.5rem', background: 'var(--surface)', borderRadius: '6px' }}>
                                            <div style={{ width: '20px', height: '20px', background: 'var(--primary)', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem' }}>{i}</div>
@@ -576,18 +667,90 @@ const PathPlanner = ({ modelUrl }) => {
                                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>X:</span>
                                                    <input 
                                                        type="number" 
-                                                       value={Math.round(local.x * 10) / 10} 
-                                                       onChange={(e) => handleWaypointEdit(i, 'x', e.target.value)}
-                                                       style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-main)', fontSize: '0.8rem', padding: '0 4px' }}
+                                                       value={Math.round(displayX * 10) / 10} 
+                                                       onChange={(e) => {
+                                                           const val = parseFloat(e.target.value) || 0;
+                                                           if (useRelativeCoords) {
+                                                               if (i === 0) {
+                                                                   // Can't edit first point in relative mode (it's always 0,0)
+                                                                   return;
+                                                               }
+                                                               // Convert relative input back to global
+                                                               const firstWp = waypoints[0].position;
+                                                               const thetaRad = toRadians(startPose.theta);
+                                                               const cos = Math.cos(thetaRad);
+                                                               const sin = Math.sin(thetaRad);
+                                                               // Current relative Y stays the same
+                                                               const currentRelY = displayY;
+                                                               // Convert new relative coords back to global
+                                                               const newGlobalX = firstWp.x + (val * cos - currentRelY * sin);
+                                                               const newGlobalY = firstWp.y + (val * sin + currentRelY * cos);
+                                                               const newWps = [...waypoints];
+                                                               newWps[i] = { ...newWps[i], position: new THREE.Vector3(newGlobalX, newGlobalY, 0) };
+                                                               setWaypoints(newWps);
+                                                           } else {
+                                                               // Absolute mode - direct edit
+                                                               const newWps = [...waypoints];
+                                                               newWps[i] = { ...newWps[i], position: new THREE.Vector3(val, wp.position.y, 0) };
+                                                               setWaypoints(newWps);
+                                                           }
+                                                       }}
+                                                       disabled={useRelativeCoords && i === 0}
+                                                       style={{ 
+                                                           width: '100%', 
+                                                           background: 'transparent', 
+                                                           border: 'none', 
+                                                           borderBottom: '1px solid var(--border)', 
+                                                           color: (useRelativeCoords && i === 0) ? 'var(--text-muted)' : 'var(--text-main)', 
+                                                           fontSize: '0.8rem', 
+                                                           padding: '0 4px',
+                                                           opacity: (useRelativeCoords && i === 0) ? 0.6 : 1
+                                                       }}
                                                    />
                                                </div>
                                                <div style={{ display: 'flex', gap: '4px' }}>
                                                    <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Y:</span>
                                                    <input 
                                                        type="number" 
-                                                       value={Math.round(local.y * 10) / 10} 
-                                                       onChange={(e) => handleWaypointEdit(i, 'y', e.target.value)}
-                                                       style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border)', color: 'var(--text-main)', fontSize: '0.8rem', padding: '0 4px' }}
+                                                       value={Math.round(displayY * 10) / 10} 
+                                                       onChange={(e) => {
+                                                           const val = parseFloat(e.target.value) || 0;
+                                                           if (useRelativeCoords) {
+                                                               if (i === 0) {
+                                                                   // Can't edit first point in relative mode
+                                                                   return;
+                                                               }
+                                                               // Convert relative input back to global
+                                                               const firstWp = waypoints[0].position;
+                                                               const thetaRad = toRadians(startPose.theta);
+                                                               const cos = Math.cos(thetaRad);
+                                                               const sin = Math.sin(thetaRad);
+                                                               // Current relative X stays the same
+                                                               const currentRelX = displayX;
+                                                               // Convert new relative coords back to global
+                                                               const newGlobalX = firstWp.x + (currentRelX * cos - val * sin);
+                                                               const newGlobalY = firstWp.y + (currentRelX * sin + val * cos);
+                                                               const newWps = [...waypoints];
+                                                               newWps[i] = { ...newWps[i], position: new THREE.Vector3(newGlobalX, newGlobalY, 0) };
+                                                               setWaypoints(newWps);
+                                                           } else {
+                                                               // Absolute mode - direct edit
+                                                               const newWps = [...waypoints];
+                                                               newWps[i] = { ...newWps[i], position: new THREE.Vector3(wp.position.x, val, 0) };
+                                                               setWaypoints(newWps);
+                                                           }
+                                                       }}
+                                                       disabled={useRelativeCoords && i === 0}
+                                                       style={{ 
+                                                           width: '100%', 
+                                                           background: 'transparent', 
+                                                           border: 'none', 
+                                                           borderBottom: '1px solid var(--border)', 
+                                                           color: (useRelativeCoords && i === 0) ? 'var(--text-muted)' : 'var(--text-main)', 
+                                                           fontSize: '0.8rem', 
+                                                           padding: '0 4px',
+                                                           opacity: (useRelativeCoords && i === 0) ? 0.6 : 1
+                                                       }}
                                                    />
                                                </div>
                                            </div>
@@ -607,7 +770,7 @@ const PathPlanner = ({ modelUrl }) => {
                                                {wp.smooth ? 'Smooth' : 'Sharp'}
                                            </button>
                                            {i > 0 && (
-                                               <button onClick={() => setWaypoints(waypoints.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#e6b9a6', cursor: 'pointer', fontSize: '1.2rem' }}>×</button>
+                                               <button onClick={() => setWaypoints(waypoints.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: '#9d9ae8', cursor: 'pointer', fontSize: '1.2rem' }}>×</button>
                                            )}
                                        </div>
                                    );
@@ -643,7 +806,7 @@ const PathPlanner = ({ modelUrl }) => {
                      >
                         {isPlaying ? 'Pause Animation' : 'Play Path'}
                      </button>
-                     {!modelUrl && <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#e6b9a6', marginTop: '0.5rem', fontStyle: 'italic' }}>* Upload robot to model path</p>}
+                     {!modelUrl && <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#9d9ae8', marginTop: '0.5rem', fontStyle: 'italic' }}>* Upload robot to model path</p>}
                  </div>
              </div>
         </div>

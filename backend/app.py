@@ -23,7 +23,7 @@ app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev_key_fallback")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = os.path.join(app.root_path, "uploads")
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB max file size
 
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
@@ -227,6 +227,22 @@ def upload_file(current_user):
         return jsonify({"message": "No selected file"}), 400
 
     if file and allowed_file(file.filename):
+        # Check file size (50 MB limit)
+        file.seek(0, 2)  # Seek to end
+        file_size = file.tell()
+        file.seek(0)  # Reset to beginning
+
+        max_size = 50 * 1024 * 1024  # 50 MB
+        if file_size > max_size:
+            return (
+                jsonify(
+                    {
+                        "message": f"File too large. Maximum size is 50 MB, your file is {file_size / (1024 * 1024):.1f} MB"
+                    }
+                ),
+                413,
+            )
+
         filename = secure_filename(file.filename)
         # Use user id prefix for simple separation
         user_upload_dir = os.path.join(
