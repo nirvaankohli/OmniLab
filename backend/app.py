@@ -32,14 +32,16 @@ os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 IS_PRODUCTION = os.getenv("FLASK_ENV") == "production"
 COOKIE_SECURE = IS_PRODUCTION
 COOKIE_HTTPONLY = True
-COOKIE_SAMESITE = "None" if not IS_PRODUCTION else "Strict"
+COOKIE_SAMESITE = "Strict" if IS_PRODUCTION else "Lax"
 
-COOKIE_SAMESITE = "Lax"
-
+# Read allowed origins from env, fallback to localhost for dev
+ALLOWED_ORIGINS = os.getenv(
+    "ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+).split(",")
 
 CORS(
     app,
-    resources={r"/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173"]}},
+    resources={r"/*": {"origins": ALLOWED_ORIGINS}},
     supports_credentials=True,
 )
 

@@ -1,4 +1,6 @@
-const API_BASE = 'http://localhost:5000';
+// In production, API is served from same origin via nginx proxy
+// In development, we need to hit the Flask dev server directly
+const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:5000';
 
 async function handleResponse(response) {
   const data = await response.json();
