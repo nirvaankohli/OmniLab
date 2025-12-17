@@ -1,6 +1,8 @@
-// In production, API is served from same origin via nginx proxy
-// In development, we need to hit the Flask dev server directly
-const API_BASE = import.meta.env.PROD ? '' : 'http://localhost:5000';
+// In production, use VITE_API_URL env var (set in Coolify)
+// In development, hit the Flask dev server directly
+const API_BASE = import.meta.env.PROD 
+  ? (import.meta.env.VITE_API_URL || '') 
+  : 'http://localhost:5000';
 
 async function handleResponse(response) {
   const data = await response.json();
