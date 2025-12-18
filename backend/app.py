@@ -307,6 +307,14 @@ def get_file(current_user, file_id):
     return send_from_directory(directory, filename)
 
 
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    return jsonify({"message": "OK"}), 200
+
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({"message": "OK"}), 200  
+
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
