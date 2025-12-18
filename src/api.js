@@ -2,7 +2,7 @@
 // In development, hit the Flask dev server directly
 const API_BASE = import.meta.env.PROD 
   ? (import.meta.env.VITE_API_URL || '') 
-  : 'http://localhost:5000';
+  : 'https://robotics-api.nirvaankohli.com/';
 
 async function handleResponse(response) {
   const data = await response.json();
