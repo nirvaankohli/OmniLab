@@ -379,6 +379,64 @@ const PathPlanner = ({ modelUrl }) => {
     // Extract positions for rendering
     const waypointPositions = waypoints.map(wp => wp.position);
 
+    // --- Menu Drag & Resize Logic ---
+    const [menuPos, setMenuPos] = useState({ x: 24, y: 24 });
+    const [menuSize, setMenuSize] = useState({ width: 300, height: 600 });
+    const [isDraggingMenu, setIsDraggingMenu] = useState(false);
+    const [isResizingMenu, setIsResizingMenu] = useState(false);
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const menuStartRef = useRef({ x: 0, y: 0 });
+    const sizeStartRef = useRef({ width: 0, height: 0 });
+
+    const handleMenuMouseDown = (e) => {
+        if (e.target.closest('button') || e.target.closest('input')) return;
+        setIsDraggingMenu(true);
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+        menuStartRef.current = { ...menuPos };
+    };
+
+    const handleResizeMouseDown = (e) => {
+        e.stopPropagation();
+        setIsResizingMenu(true);
+        dragStartRef.current = { x: e.clientX, y: e.clientY };
+        sizeStartRef.current = { ...menuSize };
+    };
+
+    useEffect(() => {
+        const handleGlobalMove = (e) => {
+            if (isDraggingMenu) {
+                const dx = e.clientX - dragStartRef.current.x;
+                const dy = e.clientY - dragStartRef.current.y;
+                setMenuPos({
+                    x: Math.max(0, menuStartRef.current.x + dx),
+                    y: Math.max(0, menuStartRef.current.y + dy)
+                });
+            } else if (isResizingMenu) {
+                const dx = e.clientX - dragStartRef.current.x;
+                const dy = e.clientY - dragStartRef.current.y;
+                setMenuSize({
+                    width: Math.max(300, sizeStartRef.current.width + dx),
+                    height: Math.max(300, sizeStartRef.current.height + dy)
+                });
+            }
+        };
+
+        const handleGlobalUp = () => {
+            setIsDraggingMenu(false);
+            setIsResizingMenu(false);
+        };
+
+        if (isDraggingMenu || isResizingMenu) {
+            window.addEventListener('pointermove', handleGlobalMove);
+            window.addEventListener('pointerup', handleGlobalUp);
+        }
+
+        return () => {
+            window.removeEventListener('pointermove', handleGlobalMove);
+            window.removeEventListener('pointerup', handleGlobalUp);
+        };
+    }, [isDraggingMenu, isResizingMenu]);
+
     return (
         <div style={{ width: '100%', height: '100%', background: '#191817', position: 'relative' }}>
              <Canvas orthographic camera={{ zoom: 4, position: [0, 0, 100] }}>
@@ -424,21 +482,27 @@ const PathPlanner = ({ modelUrl }) => {
                 </Suspense>
              </Canvas>
              
-             {/* Left Panel */}
-             <div style={{ 
-                 position: 'absolute', 
-                 top: 24, 
-                 left: 24, 
-                 background: 'rgba(38, 37, 36, 0.95)', 
-                 backdropFilter: 'blur(8px)',
-                 padding: '1.25rem', 
-                 borderRadius: '12px',
-                 minWidth: '300px',
-                 height: 'auto',
-                 maxHeight: 'calc(100vh - 48px)',
-                 display: 'flex',
-                 flexDirection: 'column',
-                 overflow: 'hidden'
+             {/* Draggable/Resizable Menu */}
+             <div 
+                 onPointerDown={handleMenuMouseDown}
+                 style={{ 
+                     position: 'absolute', 
+                     top: menuPos.y, 
+                     left: menuPos.x, 
+                     width: menuSize.width,
+                     height: menuSize.height,
+                     background: 'rgba(38, 37, 36, 0.95)', 
+                     backdropFilter: 'blur(8px)',
+                     padding: '1.25rem', 
+                     borderRadius: '12px',
+                     display: 'flex',
+                     flexDirection: 'column',
+                     overflow: 'hidden',
+                     cursor: 'default',
+                     userSelect: 'none',
+                     boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                     border: '1px solid var(--border-subtle)',
+                     zIndex: 100 // Ensure above canvas
              }}>
                  <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', marginBottom: '1rem', flexShrink: 0 }}>
                      {['Setup', 'Path'].map(tab => (
@@ -807,6 +871,33 @@ const PathPlanner = ({ modelUrl }) => {
                         {isPlaying ? 'Pause Animation' : 'Play Path'}
                      </button>
                      {!modelUrl && <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#9d9ae8', marginTop: '0.5rem', fontStyle: 'italic' }}>* Upload robot to model path</p>}
+                 </div>
+
+                 {/* Resize Handle */}
+                 <div
+                    onPointerDown={handleResizeMouseDown}
+                    style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        right: 0,
+                        width: '24px',
+                        height: '24px',
+                        cursor: 'nwse-resize',
+                        zIndex: 10,
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        justifyContent: 'flex-end',
+                        padding: '2px'
+                    }}
+                 >
+                    <div style={{
+                        width: '0',
+                        height: '0',
+                        borderStyle: 'solid',
+                        borderWidth: '0 0 12px 12px',
+                        borderColor: 'transparent transparent var(--text-muted) transparent',
+                        opacity: 0.5
+                    }} />
                  </div>
              </div>
         </div>

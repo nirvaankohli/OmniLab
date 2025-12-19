@@ -8,6 +8,7 @@ const FileUploader = ({ onFileSelect }) => {
   const [loading, setLoading] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
   const [uploadStatus, setUploadStatus] = React.useState({ type: '', message: '' });
+  const [saveToCloud, setSaveToCloud] = React.useState(true);
   const [stats, setStats] = React.useState({
     loadedMB: 0,
     totalMB: 0,
@@ -61,8 +62,8 @@ const FileUploader = ({ onFileSelect }) => {
       const blob = new Blob([reader.result], { type: file.type });
       const localUrl = URL.createObjectURL(blob);
 
-      // Upload to server if authenticated
-      if (isAuthenticated) {
+      // Upload to server if authenticated and user opted to save
+      if (isAuthenticated && saveToCloud) {
         try {
           setUploadStatus({ type: 'info', message: 'Saving to cloud...' });
           await api.uploadFile(file);
@@ -173,9 +174,33 @@ const FileUploader = ({ onFileSelect }) => {
            .stl, .obj, .glb, .gltf supported
          </p>
          {isAuthenticated && (
-           <p style={{ margin: '0.5rem 0 0', fontSize: '0.75rem', color: 'var(--primary)', fontFamily: 'var(--font-sans)' }}>
-             ✓ Will save to your account
-           </p>
+           <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem' }}>
+             <label style={{ 
+               display: 'flex', 
+               alignItems: 'center', 
+               gap: '0.5rem', 
+               cursor: 'pointer',
+               fontSize: '0.8rem', 
+               color: 'var(--text-main)', 
+               fontFamily: 'var(--font-sans)',
+               pointerEvents: 'auto' 
+             }}
+             onClick={(e) => e.stopPropagation()}
+             >
+               <input 
+                 type="checkbox" 
+                 checked={saveToCloud} 
+                 onChange={(e) => setSaveToCloud(e.target.checked)}
+                 style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+               />
+               Save to Cloud
+             </label>
+             {saveToCloud && (
+               <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontFamily: 'var(--font-sans)' }}>
+                 ✓ Will save to your account
+               </span>
+             )}
+           </div>
          )}
       </div>
     </div>
