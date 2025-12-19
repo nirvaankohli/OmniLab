@@ -36,7 +36,8 @@ COOKIE_SAMESITE = "Strict" if IS_PRODUCTION else "Lax"
 
 # Read allowed origins from env, fallback to localhost for dev
 ALLOWED_ORIGINS = os.getenv(
-    "ALLOWED_ORIGINS", ["http://localhost:5173,http://127.0.0.1:5173", "robotics.nirvaankohli.com"]
+    "ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173,https://robotics.nirvaankohli.com"
 ).split(",")
 
 CORS(
